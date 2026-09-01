@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:swiftwl}",
+            "name": "Debug swiftwl",
+            "target": "swiftwl",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug swiftwl"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:swiftwl}",
+            "name": "Release swiftwl",
+            "target": "swiftwl",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release swiftwl"
+        }
+    ]
+}

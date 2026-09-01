@@ -1,0 +1,4 @@
+module wayland {
+    header "include/shim.h"
+    export *
+}
