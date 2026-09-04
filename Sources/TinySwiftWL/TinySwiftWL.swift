@@ -170,8 +170,8 @@ let compositorCreateSurfaceTrampoline: @convention(c) (UnsafeMutableRawPointer?,
     let env = UnsafeMutablePointer<wl_swift_surface_env>.allocate(capacity: 1)
     env.pointee = wl_swift_surface_env(
         swift_context: ctx,
-        state: Unmanaged.passUnretained(state).toOpaque(),
-        destroy: nil, attach: nil, damage: nil,
+        state: Unmanaged.passRetained(state).toOpaque(),
+        destroy: surfaceDestroyTrampoline, attach: nil, damage: nil,
         frame: surfaceFrameTrampoline,
         set_opaque_region: nil, set_input_region: nil,
         commit: surfaceCommitTrampoline,
@@ -203,6 +203,11 @@ let surfaceFrameTrampoline: @convention(c) (UnsafeMutableRawPointer?, UnsafeMuta
     state.frameCallback = callback
 }
 
+let surfaceDestroyTrampoline: @convention(c) (UnsafeMutableRawPointer?, UnsafeMutableRawPointer?, OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { ctx, statePtr, _, _ in
+    guard let statePtr = statePtr else { return }
+    Unmanaged<SurfaceState>.fromOpaque(statePtr).release()
+}
+
 let surfaceCommitTrampoline: @convention(c) (UnsafeMutableRawPointer?, UnsafeMutableRawPointer?, OpaquePointer?, UnsafeMutablePointer<wl_resource>?) -> Void = { _, statePtr, _, resource in
     guard let resource = resource, let statePtr = statePtr else { return }
     let state = Unmanaged<SurfaceState>.fromOpaque(statePtr).takeUnretainedValue()
@@ -218,6 +223,7 @@ let surfaceCommitTrampoline: @convention(c) (UnsafeMutableRawPointer?, UnsafeMut
 let shmBindTrampoline: @convention(c) (OpaquePointer?, UnsafeMutableRawPointer?, UInt32, UInt32) -> Void = { client, data, version, id in
     guard let client = client else { return }
     guard let resource = wl_resource_create(client, wl_swift_shm_interface(), 1, id) else { return }
+    wl_shm_send_format(resource, 0)
     wl_shm_send_format(resource, 1)
     let env = UnsafeMutablePointer<wl_swift_shm_env>.allocate(capacity: 1)
     env.pointee = wl_swift_shm_env(
@@ -248,9 +254,9 @@ let shmPoolCreateBufferTrampoline: @convention(c) (UnsafeMutableRawPointer?, Uns
 
 let seatBindTrampoline: @convention(c) (OpaquePointer?, UnsafeMutableRawPointer?, UInt32, UInt32) -> Void = { client, data, version, id in
     guard let client = client else { return }
-    guard let resource = wl_resource_create(client, wl_swift_seat_interface(), 1, id) else { return }
-    wl_seat_send_capabilities(resource, UInt32(WL_SEAT_CAPABILITY_POINTER.rawValue | WL_SEAT_CAPABILITY_KEYBOARD.rawValue))
+    guard let resource = wl_resource_create(client, wl_swift_seat_interface(), 7, id) else { return }
     "tinyswiftwl-seat-0".withCString { wl_seat_send_name(resource, $0) }
+    wl_seat_send_capabilities(resource, UInt32(WL_SEAT_CAPABILITY_KEYBOARD.rawValue))
     let env = UnsafeMutablePointer<wl_swift_seat_env>.allocate(capacity: 1)
     env.pointee = wl_swift_seat_env(
         swift_context: data, state: nil,
@@ -268,12 +274,42 @@ let seatGetKeyboardTrampoline: @convention(c) (UnsafeMutableRawPointer?, UnsafeM
     statePtr.keyboardResource = keyboardWl
 
     wl_keyboard_send_keymap(keyboardWl, 1, statePtr.keymapFd, UInt32(statePtr.keymapSize))
+    wl_keyboard_send_repeat_info(keyboardWl, 25, 500)
     lseek(statePtr.keymapFd, 0, SEEK_SET)
+
+    // If there's already a focused surface, send keyboard enter now
+    if let surface = statePtr.focusedSurface {
+        let serial = wl_display_next_serial(statePtr.display)
+        var emptyKeys = wl_array()
+        wl_keyboard_send_enter(keyboardWl, serial, surface, &emptyKeys)
+    }
+
     let env = UnsafeMutablePointer<wl_swift_keyboard_env>.allocate(capacity: 1)
     env.pointee = wl_swift_keyboard_env(
         swift_context: ctx, state: nil, release: nil
     )
     wl_swift_set_keyboard_implementation(keyboardWl, env)
+}
+let outputBindTrampoline: @convention(c) (OpaquePointer?, UnsafeMutableRawPointer?, UInt32, UInt32) -> Void = { client, data, version, id in
+    guard let client = client else { return }
+    guard let resource = wl_resource_create(client, wl_swift_output_interface(), 2, id) else { return }
+
+    // Send geometry: 0,0 origin, 1024x768mm physical, unknown subpixel
+    "Virtual".withCString { make in
+        "Monitor".withCString { model in
+            wl_output_send_geometry(resource, 0, 0, 1024, 768, Int32(WL_OUTPUT_SUBPIXEL_UNKNOWN.rawValue), make, model, Int32(WL_OUTPUT_TRANSFORM_NORMAL.rawValue))
+        }
+    }
+
+    // Send mode: 1280x720 @ 60Hz, current + preferred
+    wl_output_send_mode(resource, WL_OUTPUT_MODE_CURRENT.rawValue | WL_OUTPUT_MODE_PREFERRED.rawValue, 1280, 720, 60000)
+
+    // Send scale: 1
+    wl_output_send_scale(resource, 1)
+
+    // wl_output version 2+: send name and description
+    "Virtual-1".withCString { wl_output_send_name(resource, $0) }
+    "TinySwiftWL Virtual Output".withCString { wl_output_send_description(resource, $0) }
 }
 let xdgWmBaseBindTrampoline: @convention(c) (OpaquePointer?, UnsafeMutableRawPointer?, UInt32, UInt32) -> Void = { client, data, version, id in
     guard let client = client else { return }
@@ -305,10 +341,9 @@ let xdgGetXdgSurfaceTrampoline: @convention(c) (UnsafeMutableRawPointer?, Unsafe
     )
     wl_swift_set_xdg_surface_implementation(xdgSurfaceWl, env)
 
-    // Send the first configure event with a serial
-    var serial = wl_display_next_serial(wl_client_get_display(OpaquePointer(bitPattern: 0)))
-    _ = serial
-    wl_swift_xdg_surface_send_configure(xdgSurfaceWl, 1)
+    // Send the first configure event with a proper serial
+    let serial = wl_display_next_serial(wl_client_get_display(client))
+    wl_swift_xdg_surface_send_configure(xdgSurfaceWl, serial)
 }
 
 let xdgGetToplevelTrampoline: @convention(c) (UnsafeMutableRawPointer?, UnsafeMutableRawPointer?, OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { ctx, _, client, resource, id in
@@ -387,7 +422,7 @@ struct TinySwiftWL {
         }
 
         guard let _ = wl_global_create(
-            display, wl_swift_seat_interface(), 1,
+            display, wl_swift_seat_interface(), 7,
             Unmanaged.passUnretained(state).toOpaque(),
             seatBindTrampoline
         ) else {
@@ -402,6 +437,15 @@ struct TinySwiftWL {
             fatalError("wl_global_create(xdg_wm_base) failed")
         }
         print("TinySwiftWL: xdg_wm_base global registered (version 7)")
+
+        guard let _ = wl_global_create(
+            display, wl_swift_output_interface(), 2,
+            nil,
+            outputBindTrampoline
+        ) else {
+            fatalError("wl_global_create(output) failed")
+        }
+        print("TinySwiftWL: wl_output global registered (version 2)")
 
         if let kbdPath = findKeyboardDevice() {
             if let kbdFd = openKeyboardDevice(path: kbdPath) {

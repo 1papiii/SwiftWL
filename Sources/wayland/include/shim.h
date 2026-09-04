@@ -84,7 +84,6 @@
 #include <wayland-protocols/xx-text-input-v3-enum.h>
 #include <wayland-protocols/xx-zones-v1-enum.h>
 
-#include "xdg-shell-server-protocol.h"
 #include <xkbcommon/xkbcommon.h>
 #include <stdlib.h>
 #include <xkbcommon/xkbcommon-keysyms.h>
