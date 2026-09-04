@@ -87,6 +87,7 @@
 #include <xkbcommon/xkbcommon.h>
 #include <stdlib.h>
 #include <xkbcommon/xkbcommon-keysyms.h>
+#include <libseat.h>
 
 
 
@@ -485,14 +486,6 @@ static inline void wl_swift_set_keyboard_implementation(
     wl_resource_set_implementation(resource, &wl_swift_keyboard_implementation, env, _wl_swift_keyboard_env_destroy);
 }
 
-// ============================================================
-// XDG Shell Compositor Support
-// ============================================================
-
-// ------------------------------------------------------------------
-// xdg_wm_base
-// ------------------------------------------------------------------
-
 typedef void (*wl_swift_xdg_wm_base_destroy_func_t)(
     void *ctx, void *state, struct wl_client *client, struct wl_resource *resource);
 typedef void (*wl_swift_xdg_wm_base_create_positioner_func_t)(
@@ -553,10 +546,6 @@ static inline void wl_swift_xdg_wm_base_send_ping(
 {
     xdg_wm_base_send_ping(resource, serial);
 }
-
-// ------------------------------------------------------------------
-// xdg_positioner
-// ------------------------------------------------------------------
 
 typedef void (*wl_swift_xdg_positioner_destroy_func_t)(
     void *ctx, void *state, struct wl_client *client, struct wl_resource *resource);
@@ -665,9 +654,6 @@ static inline void wl_swift_set_xdg_positioner_implementation(
 {
     wl_resource_set_implementation(resource, &wl_swift_xdg_positioner_implementation, env, _wl_swift_xdg_positioner_env_destroy);
 }
-// ------------------------------------------------------------------
-// xdg_surface
-// ------------------------------------------------------------------
 
 typedef void (*wl_swift_xdg_surface_destroy_func_t)(
     void *ctx, void *state, struct wl_client *client, struct wl_resource *resource);
@@ -738,9 +724,6 @@ static inline void wl_swift_xdg_surface_send_configure(
 {
     xdg_surface_send_configure(resource, serial);
 }
-// ------------------------------------------------------------------
-// xdg_toplevel
-// ------------------------------------------------------------------
 
 typedef void (*wl_swift_xdg_toplevel_destroy_func_t)(
     void *ctx, void *state, struct wl_client *client, struct wl_resource *resource);
@@ -908,9 +891,6 @@ static inline void wl_swift_xdg_toplevel_send_wm_capabilities(
 {
     xdg_toplevel_send_wm_capabilities(resource, capabilities);
 }
-// ------------------------------------------------------------------
-// xdg_popup
-// ------------------------------------------------------------------
 
 typedef void (*wl_swift_xdg_popup_destroy_func_t)(
     void *ctx, void *state, struct wl_client *client, struct wl_resource *resource);
@@ -975,10 +955,6 @@ static inline void wl_swift_xdg_popup_send_repositioned(
 {
     xdg_popup_send_repositioned(resource, token);
 }
-
-// ------------------------------------------------------------------
-// Interface helper functions
-// ------------------------------------------------------------------
 
 static inline const struct wl_interface *wl_swift_xdg_wm_base_interface(void) { return &xdg_wm_base_interface; }
 static inline const struct wl_interface *wl_swift_xdg_positioner_interface(void) { return &xdg_positioner_interface; }

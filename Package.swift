@@ -28,6 +28,7 @@ let package = Package(
                 .linkedLibrary("wayland-cursor"),
                 .linkedLibrary("wayland-egl"),
                 .linkedLibrary("xkbcommon"),
+                .linkedLibrary("seat"),
             ]
         ),
         .target(
