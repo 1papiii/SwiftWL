@@ -41,7 +41,7 @@ let package = Package(
         .executableTarget(
             name: "swiftwl",
             dependencies: ["wayland-swift", "wayland"],
-            path: "Sources/swiftwl"
+            path: "Sources/TinySwiftWL"
         ),
     ],
     swiftLanguageModes: [.v6]

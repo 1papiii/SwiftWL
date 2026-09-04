@@ -275,6 +275,85 @@ let seatGetKeyboardTrampoline: @convention(c) (UnsafeMutableRawPointer?, UnsafeM
     )
     wl_swift_set_keyboard_implementation(keyboardWl, env)
 }
+let xdgWmBaseBindTrampoline: @convention(c) (OpaquePointer?, UnsafeMutableRawPointer?, UInt32, UInt32) -> Void = { client, data, version, id in
+    guard let client = client else { return }
+    guard let resource = wl_resource_create(client, wl_swift_xdg_wm_base_interface(), Int32(version), id) else { return }
+    let env = UnsafeMutablePointer<wl_swift_xdg_wm_base_env>.allocate(capacity: 1)
+    env.pointee = wl_swift_xdg_wm_base_env(
+        swift_context: data, state: nil,
+        destroy: nil,
+        create_positioner: nil,
+        get_xdg_surface: unsafeBitCast(xdgGetXdgSurfaceTrampoline, to: UnsafeMutableRawPointer.self),
+        pong: unsafeBitCast(xdgPongTrampoline, to: UnsafeMutableRawPointer.self)
+    )
+    wl_swift_set_xdg_wm_base_implementation(resource, env)
+}
+
+let xdgGetXdgSurfaceTrampoline: @convention(c) (UnsafeMutableRawPointer?, UnsafeMutableRawPointer?, OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32, UnsafeMutablePointer<wl_resource>?) -> Void = { ctx, _, client, resource, id, surface in
+    guard let client = client else { return }
+    guard let xdgSurfaceWl = wl_resource_create(client, wl_swift_xdg_surface_interface(), 1, id) else { return }
+    print("TinySwiftWL: xdg_surface created (id=\(id))")
+
+    let env = UnsafeMutablePointer<wl_swift_xdg_surface_env>.allocate(capacity: 1)
+    env.pointee = wl_swift_xdg_surface_env(
+        swift_context: ctx, state: nil,
+        destroy: nil,
+        get_toplevel: unsafeBitCast(xdgGetToplevelTrampoline, to: UnsafeMutableRawPointer.self),
+        get_popup: nil,
+        set_window_geometry: nil,
+        ack_configure: nil
+    )
+    wl_swift_set_xdg_surface_implementation(xdgSurfaceWl, env)
+
+    // Send the first configure event with a serial
+    var serial = wl_display_next_serial(wl_client_get_display(OpaquePointer(bitPattern: 0)))
+    _ = serial
+    wl_swift_xdg_surface_send_configure(xdgSurfaceWl, 1)
+}
+
+let xdgGetToplevelTrampoline: @convention(c) (UnsafeMutableRawPointer?, UnsafeMutableRawPointer?, OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { ctx, _, client, resource, id in
+    guard let client = client else { return }
+    guard let toplevelWl = wl_resource_create(client, wl_swift_xdg_toplevel_interface(), 1, id) else { return }
+    print("TinySwiftWL: xdg_toplevel created (id=\(id))")
+
+    let env = UnsafeMutablePointer<wl_swift_xdg_toplevel_env>.allocate(capacity: 1)
+    env.pointee = wl_swift_xdg_toplevel_env(
+        swift_context: ctx, state: nil,
+        destroy: nil,
+        set_parent: nil,
+        set_title: unsafeBitCast(xdgSetTitleTrampoline, to: UnsafeMutableRawPointer.self),
+        set_app_id: unsafeBitCast(xdgSetAppIdTrampoline, to: UnsafeMutableRawPointer.self),
+        show_window_menu: nil,
+        move: nil,
+        resize: nil,
+        set_max_size: nil,
+        set_min_size: nil,
+        set_maximized: nil,
+        unset_maximized: nil,
+        set_fullscreen: nil,
+        unset_fullscreen: nil,
+        set_minimized: nil
+    )
+    wl_swift_set_xdg_toplevel_implementation(toplevelWl, env)
+
+    // Send an initial configure event: 800x600, no states
+    var states = wl_array()
+    wl_swift_xdg_toplevel_send_configure(toplevelWl, 800, 600, &states)
+}
+
+let xdgSetTitleTrampoline: @convention(c) (UnsafeMutableRawPointer?, UnsafeMutableRawPointer?, OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafePointer<CChar>?) -> Void = { _, _, _, _, title in
+    guard let title = title else { return }
+    print("TinySwiftWL: set_title: \(String(cString: title))")
+}
+
+let xdgSetAppIdTrampoline: @convention(c) (UnsafeMutableRawPointer?, UnsafeMutableRawPointer?, OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UnsafePointer<CChar>?) -> Void = { _, _, _, _, appId in
+    guard let appId = appId else { return }
+    print("TinySwiftWL: set_app_id: \(String(cString: appId))")
+}
+
+let xdgPongTrampoline: @convention(c) (UnsafeMutableRawPointer?, UnsafeMutableRawPointer?, OpaquePointer?, UnsafeMutablePointer<wl_resource>?, UInt32) -> Void = { _, _, _, _, serial in
+    print("TinySwiftWL: pong serial=\(serial)")
+}
 @main
 struct TinySwiftWL {
     static func main() {
@@ -314,6 +393,15 @@ struct TinySwiftWL {
         ) else {
             fatalError("wl_global_create(seat) failed")
         }
+
+        guard let _ = wl_global_create(
+            display, wl_swift_xdg_wm_base_interface(), 7,
+            Unmanaged.passUnretained(state).toOpaque(),
+            xdgWmBaseBindTrampoline
+        ) else {
+            fatalError("wl_global_create(xdg_wm_base) failed")
+        }
+        print("TinySwiftWL: xdg_wm_base global registered (version 7)")
 
         if let kbdPath = findKeyboardDevice() {
             if let kbdFd = openKeyboardDevice(path: kbdPath) {

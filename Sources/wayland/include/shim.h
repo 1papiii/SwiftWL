@@ -7,7 +7,7 @@
 #include <wayland-server.h>
 #include <wayland-server-core.h>
 #include <wayland-server-protocol.h>
-
+#include "xdg-shell-server-protocol.h"
 #include <wayland-egl.h>
 #include <wayland-egl-backend.h>
 #include <wayland-egl-core.h>
@@ -84,6 +84,7 @@
 #include <wayland-protocols/xx-text-input-v3-enum.h>
 #include <wayland-protocols/xx-zones-v1-enum.h>
 
+#include "xdg-shell-server-protocol.h"
 #include <xkbcommon/xkbcommon.h>
 #include <stdlib.h>
 #include <xkbcommon/xkbcommon-keysyms.h>
@@ -215,7 +216,6 @@ static void _wl_swift_surface_destroy(struct wl_client *client, struct wl_resour
     struct wl_swift_surface_env *env = (struct wl_swift_surface_env *)wl_resource_get_user_data(resource);
     if (env && env->destroy) env->destroy(env->swift_context, env->state, client, resource);
 }
-
 static void _wl_swift_surface_attach(struct wl_client *client, struct wl_resource *resource,
                                      struct wl_resource *buffer, int32_t x, int32_t y) {
     struct wl_swift_surface_env *env = (struct wl_swift_surface_env *)wl_resource_get_user_data(resource);
@@ -485,3 +485,504 @@ static inline void wl_swift_set_keyboard_implementation(
 {
     wl_resource_set_implementation(resource, &wl_swift_keyboard_implementation, env, _wl_swift_keyboard_env_destroy);
 }
+
+// ============================================================
+// XDG Shell Compositor Support
+// ============================================================
+
+// ------------------------------------------------------------------
+// xdg_wm_base
+// ------------------------------------------------------------------
+
+typedef void (*wl_swift_xdg_wm_base_destroy_func_t)(
+    void *ctx, void *state, struct wl_client *client, struct wl_resource *resource);
+typedef void (*wl_swift_xdg_wm_base_create_positioner_func_t)(
+    void *ctx, void *state, struct wl_client *client, struct wl_resource *resource, uint32_t id);
+typedef void (*wl_swift_xdg_wm_base_get_xdg_surface_func_t)(
+    void *ctx, void *state, struct wl_client *client, struct wl_resource *resource, uint32_t id, struct wl_resource *surface);
+typedef void (*wl_swift_xdg_wm_base_pong_func_t)(
+    void *ctx, void *state, struct wl_client *client, struct wl_resource *resource, uint32_t serial);
+
+struct wl_swift_xdg_wm_base_env {
+    void *swift_context;
+    void *state;
+    void *destroy;
+    void *create_positioner;
+    void *get_xdg_surface;
+    void *pong;
+};
+
+static void _wl_swift_xdg_wm_base_destroy(struct wl_client *client, struct wl_resource *resource) {
+    struct wl_swift_xdg_wm_base_env *env = (struct wl_swift_xdg_wm_base_env *)wl_resource_get_user_data(resource);
+    if (env && env->destroy) ((wl_swift_xdg_wm_base_destroy_func_t)(env->destroy))(env->swift_context, env->state, client, resource);
+}
+
+static void _wl_swift_xdg_wm_base_create_positioner(struct wl_client *client, struct wl_resource *resource, uint32_t id) {
+    struct wl_swift_xdg_wm_base_env *env = (struct wl_swift_xdg_wm_base_env *)wl_resource_get_user_data(resource);
+    if (env && env->create_positioner) ((wl_swift_xdg_wm_base_create_positioner_func_t)(env->create_positioner))(env->swift_context, env->state, client, resource, id);
+}
+
+static void _wl_swift_xdg_wm_base_get_xdg_surface(struct wl_client *client, struct wl_resource *resource, uint32_t id, struct wl_resource *surface) {
+    struct wl_swift_xdg_wm_base_env *env = (struct wl_swift_xdg_wm_base_env *)wl_resource_get_user_data(resource);
+    if (env && env->get_xdg_surface) ((wl_swift_xdg_wm_base_get_xdg_surface_func_t)(env->get_xdg_surface))(env->swift_context, env->state, client, resource, id, surface);
+}
+
+static void _wl_swift_xdg_wm_base_pong(struct wl_client *client, struct wl_resource *resource, uint32_t serial) {
+    struct wl_swift_xdg_wm_base_env *env = (struct wl_swift_xdg_wm_base_env *)wl_resource_get_user_data(resource);
+    if (env && env->pong) ((wl_swift_xdg_wm_base_pong_func_t)(env->pong))(env->swift_context, env->state, client, resource, serial);
+}
+static void _wl_swift_xdg_wm_base_env_destroy(struct wl_resource *resource) {
+    struct wl_swift_xdg_wm_base_env *env = (struct wl_swift_xdg_wm_base_env *)wl_resource_get_user_data(resource);
+    free(env);
+}
+
+static const struct xdg_wm_base_interface wl_swift_xdg_wm_base_implementation = {
+    .destroy = _wl_swift_xdg_wm_base_destroy,
+    .create_positioner = _wl_swift_xdg_wm_base_create_positioner,
+    .get_xdg_surface = _wl_swift_xdg_wm_base_get_xdg_surface,
+    .pong = _wl_swift_xdg_wm_base_pong,
+};
+
+static inline void wl_swift_set_xdg_wm_base_implementation(
+    struct wl_resource *resource, struct wl_swift_xdg_wm_base_env *env)
+{
+    wl_resource_set_implementation(resource, &wl_swift_xdg_wm_base_implementation, env, _wl_swift_xdg_wm_base_env_destroy);
+}
+
+static inline void wl_swift_xdg_wm_base_send_ping(
+    struct wl_resource *resource, uint32_t serial)
+{
+    xdg_wm_base_send_ping(resource, serial);
+}
+
+// ------------------------------------------------------------------
+// xdg_positioner
+// ------------------------------------------------------------------
+
+typedef void (*wl_swift_xdg_positioner_destroy_func_t)(
+    void *ctx, void *state, struct wl_client *client, struct wl_resource *resource);
+typedef void (*wl_swift_xdg_positioner_set_size_func_t)(
+    void *ctx, void *state, struct wl_client *client, struct wl_resource *resource, int32_t width, int32_t height);
+typedef void (*wl_swift_xdg_positioner_set_anchor_rect_func_t)(
+    void *ctx, void *state, struct wl_client *client, struct wl_resource *resource, int32_t x, int32_t y, int32_t width, int32_t height);
+typedef void (*wl_swift_xdg_positioner_set_anchor_func_t)(
+    void *ctx, void *state, struct wl_client *client, struct wl_resource *resource, uint32_t anchor);
+typedef void (*wl_swift_xdg_positioner_set_gravity_func_t)(
+    void *ctx, void *state, struct wl_client *client, struct wl_resource *resource, uint32_t gravity);
+typedef void (*wl_swift_xdg_positioner_set_constraint_adjustment_func_t)(
+    void *ctx, void *state, struct wl_client *client, struct wl_resource *resource, uint32_t constraint_adjustment);
+typedef void (*wl_swift_xdg_positioner_set_offset_func_t)(
+    void *ctx, void *state, struct wl_client *client, struct wl_resource *resource, int32_t x, int32_t y);
+typedef void (*wl_swift_xdg_positioner_set_reactive_func_t)(
+    void *ctx, void *state, struct wl_client *client, struct wl_resource *resource);
+typedef void (*wl_swift_xdg_positioner_set_parent_size_func_t)(
+    void *ctx, void *state, struct wl_client *client, struct wl_resource *resource, int32_t parent_width, int32_t parent_height);
+typedef void (*wl_swift_xdg_positioner_set_parent_configure_func_t)(
+    void *ctx, void *state, struct wl_client *client, struct wl_resource *resource, uint32_t serial);
+
+struct wl_swift_xdg_positioner_env {
+    void *swift_context;
+    void *state;
+    void *destroy;
+    void *set_size;
+    void *set_anchor_rect;
+    void *set_anchor;
+    void *set_gravity;
+    void *set_constraint_adjustment;
+    void *set_offset;
+    void *set_reactive;
+    void *set_parent_size;
+    void *set_parent_configure;
+};
+static void _wl_swift_xdg_positioner_destroy(struct wl_client *client, struct wl_resource *resource) {
+    struct wl_swift_xdg_positioner_env *env = (struct wl_swift_xdg_positioner_env *)wl_resource_get_user_data(resource);
+    if (env && env->destroy) ((wl_swift_xdg_positioner_destroy_func_t)(env->destroy))(env->swift_context, env->state, client, resource);
+}
+
+static void _wl_swift_xdg_positioner_set_size(struct wl_client *client, struct wl_resource *resource, int32_t width, int32_t height) {
+    struct wl_swift_xdg_positioner_env *env = (struct wl_swift_xdg_positioner_env *)wl_resource_get_user_data(resource);
+    if (env && env->set_size) ((wl_swift_xdg_positioner_set_size_func_t)(env->set_size))(env->swift_context, env->state, client, resource, width, height);
+}
+
+static void _wl_swift_xdg_positioner_set_anchor_rect(struct wl_client *client, struct wl_resource *resource, int32_t x, int32_t y, int32_t width, int32_t height) {
+    struct wl_swift_xdg_positioner_env *env = (struct wl_swift_xdg_positioner_env *)wl_resource_get_user_data(resource);
+    if (env && env->set_anchor_rect) ((wl_swift_xdg_positioner_set_anchor_rect_func_t)(env->set_anchor_rect))(env->swift_context, env->state, client, resource, x, y, width, height);
+}
+
+static void _wl_swift_xdg_positioner_set_anchor(struct wl_client *client, struct wl_resource *resource, uint32_t anchor) {
+    struct wl_swift_xdg_positioner_env *env = (struct wl_swift_xdg_positioner_env *)wl_resource_get_user_data(resource);
+    if (env && env->set_anchor) ((wl_swift_xdg_positioner_set_anchor_func_t)(env->set_anchor))(env->swift_context, env->state, client, resource, anchor);
+}
+
+static void _wl_swift_xdg_positioner_set_gravity(struct wl_client *client, struct wl_resource *resource, uint32_t gravity) {
+    struct wl_swift_xdg_positioner_env *env = (struct wl_swift_xdg_positioner_env *)wl_resource_get_user_data(resource);
+    if (env && env->set_gravity) ((wl_swift_xdg_positioner_set_gravity_func_t)(env->set_gravity))(env->swift_context, env->state, client, resource, gravity);
+}
+
+static void _wl_swift_xdg_positioner_set_constraint_adjustment(struct wl_client *client, struct wl_resource *resource, uint32_t ca) {
+    struct wl_swift_xdg_positioner_env *env = (struct wl_swift_xdg_positioner_env *)wl_resource_get_user_data(resource);
+    if (env && env->set_constraint_adjustment) ((wl_swift_xdg_positioner_set_constraint_adjustment_func_t)(env->set_constraint_adjustment))(env->swift_context, env->state, client, resource, ca);
+}
+static void _wl_swift_xdg_positioner_set_offset(struct wl_client *client, struct wl_resource *resource, int32_t x, int32_t y) {
+    struct wl_swift_xdg_positioner_env *env = (struct wl_swift_xdg_positioner_env *)wl_resource_get_user_data(resource);
+    if (env && env->set_offset) ((wl_swift_xdg_positioner_set_offset_func_t)(env->set_offset))(env->swift_context, env->state, client, resource, x, y);
+}
+
+static void _wl_swift_xdg_positioner_set_reactive(struct wl_client *client, struct wl_resource *resource) {
+    struct wl_swift_xdg_positioner_env *env = (struct wl_swift_xdg_positioner_env *)wl_resource_get_user_data(resource);
+    if (env && env->set_reactive) ((wl_swift_xdg_positioner_set_reactive_func_t)(env->set_reactive))(env->swift_context, env->state, client, resource);
+}
+
+static void _wl_swift_xdg_positioner_set_parent_size(struct wl_client *client, struct wl_resource *resource, int32_t pw, int32_t ph) {
+    struct wl_swift_xdg_positioner_env *env = (struct wl_swift_xdg_positioner_env *)wl_resource_get_user_data(resource);
+    if (env && env->set_parent_size) ((wl_swift_xdg_positioner_set_parent_size_func_t)(env->set_parent_size))(env->swift_context, env->state, client, resource, pw, ph);
+}
+
+static void _wl_swift_xdg_positioner_set_parent_configure(struct wl_client *client, struct wl_resource *resource, uint32_t serial) {
+    struct wl_swift_xdg_positioner_env *env = (struct wl_swift_xdg_positioner_env *)wl_resource_get_user_data(resource);
+    if (env && env->set_parent_configure) ((wl_swift_xdg_positioner_set_parent_configure_func_t)(env->set_parent_configure))(env->swift_context, env->state, client, resource, serial);
+}
+
+static void _wl_swift_xdg_positioner_env_destroy(struct wl_resource *resource) {
+    struct wl_swift_xdg_positioner_env *env = (struct wl_swift_xdg_positioner_env *)wl_resource_get_user_data(resource);
+    free(env);
+}
+
+static const struct xdg_positioner_interface wl_swift_xdg_positioner_implementation = {
+    .destroy = _wl_swift_xdg_positioner_destroy,
+    .set_size = _wl_swift_xdg_positioner_set_size,
+    .set_anchor_rect = _wl_swift_xdg_positioner_set_anchor_rect,
+    .set_anchor = _wl_swift_xdg_positioner_set_anchor,
+    .set_gravity = _wl_swift_xdg_positioner_set_gravity,
+    .set_constraint_adjustment = _wl_swift_xdg_positioner_set_constraint_adjustment,
+    .set_offset = _wl_swift_xdg_positioner_set_offset,
+    .set_reactive = _wl_swift_xdg_positioner_set_reactive,
+    .set_parent_size = _wl_swift_xdg_positioner_set_parent_size,
+    .set_parent_configure = _wl_swift_xdg_positioner_set_parent_configure,
+};
+
+static inline void wl_swift_set_xdg_positioner_implementation(
+    struct wl_resource *resource, struct wl_swift_xdg_positioner_env *env)
+{
+    wl_resource_set_implementation(resource, &wl_swift_xdg_positioner_implementation, env, _wl_swift_xdg_positioner_env_destroy);
+}
+// ------------------------------------------------------------------
+// xdg_surface
+// ------------------------------------------------------------------
+
+typedef void (*wl_swift_xdg_surface_destroy_func_t)(
+    void *ctx, void *state, struct wl_client *client, struct wl_resource *resource);
+typedef void (*wl_swift_xdg_surface_get_toplevel_func_t)(
+    void *ctx, void *state, struct wl_client *client, struct wl_resource *resource, uint32_t id);
+typedef void (*wl_swift_xdg_surface_get_popup_func_t)(
+    void *ctx, void *state, struct wl_client *client, struct wl_resource *resource, uint32_t id, struct wl_resource *parent, struct wl_resource *positioner);
+typedef void (*wl_swift_xdg_surface_set_window_geometry_func_t)(
+    void *ctx, void *state, struct wl_client *client, struct wl_resource *resource, int32_t x, int32_t y, int32_t width, int32_t height);
+typedef void (*wl_swift_xdg_surface_ack_configure_func_t)(
+    void *ctx, void *state, struct wl_client *client, struct wl_resource *resource, uint32_t serial);
+
+struct wl_swift_xdg_surface_env {
+    void *swift_context;
+    void *state;
+    void *destroy;
+    void *get_toplevel;
+    void *get_popup;
+    void *set_window_geometry;
+    void *ack_configure;
+};
+
+static void _wl_swift_xdg_surface_destroy(struct wl_client *client, struct wl_resource *resource) {
+    struct wl_swift_xdg_surface_env *env = (struct wl_swift_xdg_surface_env *)wl_resource_get_user_data(resource);
+    if (env && env->destroy) ((wl_swift_xdg_surface_destroy_func_t)(env->destroy))(env->swift_context, env->state, client, resource);
+}
+
+static void _wl_swift_xdg_surface_get_toplevel(struct wl_client *client, struct wl_resource *resource, uint32_t id) {
+    struct wl_swift_xdg_surface_env *env = (struct wl_swift_xdg_surface_env *)wl_resource_get_user_data(resource);
+    if (env && env->get_toplevel) ((wl_swift_xdg_surface_get_toplevel_func_t)(env->get_toplevel))(env->swift_context, env->state, client, resource, id);
+}
+static void _wl_swift_xdg_surface_get_popup(struct wl_client *client, struct wl_resource *resource, uint32_t id, struct wl_resource *parent, struct wl_resource *positioner) {
+    struct wl_swift_xdg_surface_env *env = (struct wl_swift_xdg_surface_env *)wl_resource_get_user_data(resource);
+    if (env && env->get_popup) ((wl_swift_xdg_surface_get_popup_func_t)(env->get_popup))(env->swift_context, env->state, client, resource, id, parent, positioner);
+}
+
+static void _wl_swift_xdg_surface_set_window_geometry(struct wl_client *client, struct wl_resource *resource, int32_t x, int32_t y, int32_t width, int32_t height) {
+    struct wl_swift_xdg_surface_env *env = (struct wl_swift_xdg_surface_env *)wl_resource_get_user_data(resource);
+    if (env && env->set_window_geometry) ((wl_swift_xdg_surface_set_window_geometry_func_t)(env->set_window_geometry))(env->swift_context, env->state, client, resource, x, y, width, height);
+}
+
+static void _wl_swift_xdg_surface_ack_configure(struct wl_client *client, struct wl_resource *resource, uint32_t serial) {
+    struct wl_swift_xdg_surface_env *env = (struct wl_swift_xdg_surface_env *)wl_resource_get_user_data(resource);
+    if (env && env->ack_configure) ((wl_swift_xdg_surface_ack_configure_func_t)(env->ack_configure))(env->swift_context, env->state, client, resource, serial);
+}
+
+static void _wl_swift_xdg_surface_env_destroy(struct wl_resource *resource) {
+    struct wl_swift_xdg_surface_env *env = (struct wl_swift_xdg_surface_env *)wl_resource_get_user_data(resource);
+    free(env);
+}
+
+static const struct xdg_surface_interface wl_swift_xdg_surface_implementation = {
+    .destroy = _wl_swift_xdg_surface_destroy,
+    .get_toplevel = _wl_swift_xdg_surface_get_toplevel,
+    .get_popup = _wl_swift_xdg_surface_get_popup,
+    .set_window_geometry = _wl_swift_xdg_surface_set_window_geometry,
+    .ack_configure = _wl_swift_xdg_surface_ack_configure,
+};
+
+static inline void wl_swift_set_xdg_surface_implementation(
+    struct wl_resource *resource, struct wl_swift_xdg_surface_env *env)
+{
+    wl_resource_set_implementation(resource, &wl_swift_xdg_surface_implementation, env, _wl_swift_xdg_surface_env_destroy);
+}
+
+static inline void wl_swift_xdg_surface_send_configure(
+    struct wl_resource *resource, uint32_t serial)
+{
+    xdg_surface_send_configure(resource, serial);
+}
+// ------------------------------------------------------------------
+// xdg_toplevel
+// ------------------------------------------------------------------
+
+typedef void (*wl_swift_xdg_toplevel_destroy_func_t)(
+    void *ctx, void *state, struct wl_client *client, struct wl_resource *resource);
+typedef void (*wl_swift_xdg_toplevel_set_parent_func_t)(
+    void *ctx, void *state, struct wl_client *client, struct wl_resource *resource, struct wl_resource *parent);
+typedef void (*wl_swift_xdg_toplevel_set_title_func_t)(
+    void *ctx, void *state, struct wl_client *client, struct wl_resource *resource, const char *title);
+typedef void (*wl_swift_xdg_toplevel_set_app_id_func_t)(
+    void *ctx, void *state, struct wl_client *client, struct wl_resource *resource, const char *app_id);
+typedef void (*wl_swift_xdg_toplevel_show_window_menu_func_t)(
+    void *ctx, void *state, struct wl_client *client, struct wl_resource *resource, struct wl_resource *seat, uint32_t serial, int32_t x, int32_t y);
+typedef void (*wl_swift_xdg_toplevel_move_func_t)(
+    void *ctx, void *state, struct wl_client *client, struct wl_resource *resource, struct wl_resource *seat, uint32_t serial);
+typedef void (*wl_swift_xdg_toplevel_resize_func_t)(
+    void *ctx, void *state, struct wl_client *client, struct wl_resource *resource, struct wl_resource *seat, uint32_t serial, uint32_t edges);
+typedef void (*wl_swift_xdg_toplevel_set_max_size_func_t)(
+    void *ctx, void *state, struct wl_client *client, struct wl_resource *resource, int32_t width, int32_t height);
+typedef void (*wl_swift_xdg_toplevel_set_min_size_func_t)(
+    void *ctx, void *state, struct wl_client *client, struct wl_resource *resource, int32_t width, int32_t height);
+typedef void (*wl_swift_xdg_toplevel_set_maximized_func_t)(
+    void *ctx, void *state, struct wl_client *client, struct wl_resource *resource);
+typedef void (*wl_swift_xdg_toplevel_unset_maximized_func_t)(
+    void *ctx, void *state, struct wl_client *client, struct wl_resource *resource);
+typedef void (*wl_swift_xdg_toplevel_set_fullscreen_func_t)(
+    void *ctx, void *state, struct wl_client *client, struct wl_resource *resource, struct wl_resource *output);
+typedef void (*wl_swift_xdg_toplevel_unset_fullscreen_func_t)(
+    void *ctx, void *state, struct wl_client *client, struct wl_resource *resource);
+typedef void (*wl_swift_xdg_toplevel_set_minimized_func_t)(
+    void *ctx, void *state, struct wl_client *client, struct wl_resource *resource);
+
+struct wl_swift_xdg_toplevel_env {
+    void *swift_context;
+    void *state;
+    void *destroy;
+    void *set_parent;
+    void *set_title;
+    void *set_app_id;
+    void *show_window_menu;
+    void *move;
+    void *resize;
+    void *set_max_size;
+    void *set_min_size;
+    void *set_maximized;
+    void *unset_maximized;
+    void *set_fullscreen;
+    void *unset_fullscreen;
+    void *set_minimized;
+};
+static void _wl_swift_xdg_toplevel_destroy(struct wl_client *client, struct wl_resource *resource) {
+    struct wl_swift_xdg_toplevel_env *env = (struct wl_swift_xdg_toplevel_env *)wl_resource_get_user_data(resource);
+    if (env && env->destroy) ((wl_swift_xdg_toplevel_destroy_func_t)(env->destroy))(env->swift_context, env->state, client, resource);
+}
+
+static void _wl_swift_xdg_toplevel_set_parent(struct wl_client *client, struct wl_resource *resource, struct wl_resource *parent) {
+    struct wl_swift_xdg_toplevel_env *env = (struct wl_swift_xdg_toplevel_env *)wl_resource_get_user_data(resource);
+    if (env && env->set_parent) ((wl_swift_xdg_toplevel_set_parent_func_t)(env->set_parent))(env->swift_context, env->state, client, resource, parent);
+}
+
+static void _wl_swift_xdg_toplevel_set_title(struct wl_client *client, struct wl_resource *resource, const char *title) {
+    struct wl_swift_xdg_toplevel_env *env = (struct wl_swift_xdg_toplevel_env *)wl_resource_get_user_data(resource);
+    if (env && env->set_title) ((wl_swift_xdg_toplevel_set_title_func_t)(env->set_title))(env->swift_context, env->state, client, resource, title);
+}
+
+static void _wl_swift_xdg_toplevel_set_app_id(struct wl_client *client, struct wl_resource *resource, const char *app_id) {
+    struct wl_swift_xdg_toplevel_env *env = (struct wl_swift_xdg_toplevel_env *)wl_resource_get_user_data(resource);
+    if (env && env->set_app_id) ((wl_swift_xdg_toplevel_set_app_id_func_t)(env->set_app_id))(env->swift_context, env->state, client, resource, app_id);
+}
+
+static void _wl_swift_xdg_toplevel_show_window_menu(struct wl_client *client, struct wl_resource *resource, struct wl_resource *seat, uint32_t serial, int32_t x, int32_t y) {
+    struct wl_swift_xdg_toplevel_env *env = (struct wl_swift_xdg_toplevel_env *)wl_resource_get_user_data(resource);
+    if (env && env->show_window_menu) ((wl_swift_xdg_toplevel_show_window_menu_func_t)(env->show_window_menu))(env->swift_context, env->state, client, resource, seat, serial, x, y);
+}
+
+static void _wl_swift_xdg_toplevel_move(struct wl_client *client, struct wl_resource *resource, struct wl_resource *seat, uint32_t serial) {
+    struct wl_swift_xdg_toplevel_env *env = (struct wl_swift_xdg_toplevel_env *)wl_resource_get_user_data(resource);
+    if (env && env->move) ((wl_swift_xdg_toplevel_move_func_t)(env->move))(env->swift_context, env->state, client, resource, seat, serial);
+}
+
+static void _wl_swift_xdg_toplevel_resize(struct wl_client *client, struct wl_resource *resource, struct wl_resource *seat, uint32_t serial, uint32_t edges) {
+    struct wl_swift_xdg_toplevel_env *env = (struct wl_swift_xdg_toplevel_env *)wl_resource_get_user_data(resource);
+    if (env && env->resize) ((wl_swift_xdg_toplevel_resize_func_t)(env->resize))(env->swift_context, env->state, client, resource, seat, serial, edges);
+}
+static void _wl_swift_xdg_toplevel_set_max_size(struct wl_client *client, struct wl_resource *resource, int32_t width, int32_t height) {
+    struct wl_swift_xdg_toplevel_env *env = (struct wl_swift_xdg_toplevel_env *)wl_resource_get_user_data(resource);
+    if (env && env->set_max_size) ((wl_swift_xdg_toplevel_set_max_size_func_t)(env->set_max_size))(env->swift_context, env->state, client, resource, width, height);
+}
+
+static void _wl_swift_xdg_toplevel_set_min_size(struct wl_client *client, struct wl_resource *resource, int32_t width, int32_t height) {
+    struct wl_swift_xdg_toplevel_env *env = (struct wl_swift_xdg_toplevel_env *)wl_resource_get_user_data(resource);
+    if (env && env->set_min_size) ((wl_swift_xdg_toplevel_set_min_size_func_t)(env->set_min_size))(env->swift_context, env->state, client, resource, width, height);
+}
+
+static void _wl_swift_xdg_toplevel_set_maximized(struct wl_client *client, struct wl_resource *resource) {
+    struct wl_swift_xdg_toplevel_env *env = (struct wl_swift_xdg_toplevel_env *)wl_resource_get_user_data(resource);
+    if (env && env->set_maximized) ((wl_swift_xdg_toplevel_set_maximized_func_t)(env->set_maximized))(env->swift_context, env->state, client, resource);
+}
+
+static void _wl_swift_xdg_toplevel_unset_maximized(struct wl_client *client, struct wl_resource *resource) {
+    struct wl_swift_xdg_toplevel_env *env = (struct wl_swift_xdg_toplevel_env *)wl_resource_get_user_data(resource);
+    if (env && env->unset_maximized) ((wl_swift_xdg_toplevel_unset_maximized_func_t)(env->unset_maximized))(env->swift_context, env->state, client, resource);
+}
+
+static void _wl_swift_xdg_toplevel_set_fullscreen(struct wl_client *client, struct wl_resource *resource, struct wl_resource *output) {
+    struct wl_swift_xdg_toplevel_env *env = (struct wl_swift_xdg_toplevel_env *)wl_resource_get_user_data(resource);
+    if (env && env->set_fullscreen) ((wl_swift_xdg_toplevel_set_fullscreen_func_t)(env->set_fullscreen))(env->swift_context, env->state, client, resource, output);
+}
+
+static void _wl_swift_xdg_toplevel_unset_fullscreen(struct wl_client *client, struct wl_resource *resource) {
+    struct wl_swift_xdg_toplevel_env *env = (struct wl_swift_xdg_toplevel_env *)wl_resource_get_user_data(resource);
+    if (env && env->unset_fullscreen) ((wl_swift_xdg_toplevel_unset_fullscreen_func_t)(env->unset_fullscreen))(env->swift_context, env->state, client, resource);
+}
+
+static void _wl_swift_xdg_toplevel_set_minimized(struct wl_client *client, struct wl_resource *resource) {
+    struct wl_swift_xdg_toplevel_env *env = (struct wl_swift_xdg_toplevel_env *)wl_resource_get_user_data(resource);
+    if (env && env->set_minimized) ((wl_swift_xdg_toplevel_set_minimized_func_t)(env->set_minimized))(env->swift_context, env->state, client, resource);
+}
+
+static void _wl_swift_xdg_toplevel_env_destroy(struct wl_resource *resource) {
+    struct wl_swift_xdg_toplevel_env *env = (struct wl_swift_xdg_toplevel_env *)wl_resource_get_user_data(resource);
+    free(env);
+}
+
+static const struct xdg_toplevel_interface wl_swift_xdg_toplevel_implementation = {
+    .destroy = _wl_swift_xdg_toplevel_destroy,
+    .set_parent = _wl_swift_xdg_toplevel_set_parent,
+    .set_title = _wl_swift_xdg_toplevel_set_title,
+    .set_app_id = _wl_swift_xdg_toplevel_set_app_id,
+    .show_window_menu = _wl_swift_xdg_toplevel_show_window_menu,
+    .move = _wl_swift_xdg_toplevel_move,
+    .resize = _wl_swift_xdg_toplevel_resize,
+    .set_max_size = _wl_swift_xdg_toplevel_set_max_size,
+    .set_min_size = _wl_swift_xdg_toplevel_set_min_size,
+    .set_maximized = _wl_swift_xdg_toplevel_set_maximized,
+    .unset_maximized = _wl_swift_xdg_toplevel_unset_maximized,
+    .set_fullscreen = _wl_swift_xdg_toplevel_set_fullscreen,
+    .unset_fullscreen = _wl_swift_xdg_toplevel_unset_fullscreen,
+    .set_minimized = _wl_swift_xdg_toplevel_set_minimized,
+};
+static inline void wl_swift_set_xdg_toplevel_implementation(
+    struct wl_resource *resource, struct wl_swift_xdg_toplevel_env *env)
+{
+    wl_resource_set_implementation(resource, &wl_swift_xdg_toplevel_implementation, env, _wl_swift_xdg_toplevel_env_destroy);
+}
+
+static inline void wl_swift_xdg_toplevel_send_configure(
+    struct wl_resource *resource, int32_t width, int32_t height, struct wl_array *states)
+{
+    xdg_toplevel_send_configure(resource, width, height, states);
+}
+
+static inline void wl_swift_xdg_toplevel_send_close(
+    struct wl_resource *resource)
+{
+    xdg_toplevel_send_close(resource);
+}
+
+static inline void wl_swift_xdg_toplevel_send_configure_bounds(
+    struct wl_resource *resource, int32_t width, int32_t height)
+{
+    xdg_toplevel_send_configure_bounds(resource, width, height);
+}
+
+static inline void wl_swift_xdg_toplevel_send_wm_capabilities(
+    struct wl_resource *resource, struct wl_array *capabilities)
+{
+    xdg_toplevel_send_wm_capabilities(resource, capabilities);
+}
+// ------------------------------------------------------------------
+// xdg_popup
+// ------------------------------------------------------------------
+
+typedef void (*wl_swift_xdg_popup_destroy_func_t)(
+    void *ctx, void *state, struct wl_client *client, struct wl_resource *resource);
+typedef void (*wl_swift_xdg_popup_grab_func_t)(
+    void *ctx, void *state, struct wl_client *client, struct wl_resource *resource, struct wl_resource *seat, uint32_t serial);
+typedef void (*wl_swift_xdg_popup_reposition_func_t)(
+    void *ctx, void *state, struct wl_client *client, struct wl_resource *resource, struct wl_resource *positioner, uint32_t token);
+
+struct wl_swift_xdg_popup_env {
+    void *swift_context;
+    void *state;
+    void *destroy;
+    void *grab;
+    void *reposition;
+};
+
+static void _wl_swift_xdg_popup_destroy(struct wl_client *client, struct wl_resource *resource) {
+    struct wl_swift_xdg_popup_env *env = (struct wl_swift_xdg_popup_env *)wl_resource_get_user_data(resource);
+    if (env && env->destroy) ((wl_swift_xdg_popup_destroy_func_t)(env->destroy))(env->swift_context, env->state, client, resource);
+}
+
+static void _wl_swift_xdg_popup_grab(struct wl_client *client, struct wl_resource *resource, struct wl_resource *seat, uint32_t serial) {
+    struct wl_swift_xdg_popup_env *env = (struct wl_swift_xdg_popup_env *)wl_resource_get_user_data(resource);
+    if (env && env->grab) ((wl_swift_xdg_popup_grab_func_t)(env->grab))(env->swift_context, env->state, client, resource, seat, serial);
+}
+
+static void _wl_swift_xdg_popup_reposition(struct wl_client *client, struct wl_resource *resource, struct wl_resource *positioner, uint32_t token) {
+    struct wl_swift_xdg_popup_env *env = (struct wl_swift_xdg_popup_env *)wl_resource_get_user_data(resource);
+    if (env && env->reposition) ((wl_swift_xdg_popup_reposition_func_t)(env->reposition))(env->swift_context, env->state, client, resource, positioner, token);
+}
+
+static void _wl_swift_xdg_popup_env_destroy(struct wl_resource *resource) {
+    struct wl_swift_xdg_popup_env *env = (struct wl_swift_xdg_popup_env *)wl_resource_get_user_data(resource);
+    free(env);
+}
+
+static const struct xdg_popup_interface wl_swift_xdg_popup_implementation = {
+    .destroy = _wl_swift_xdg_popup_destroy,
+    .grab = _wl_swift_xdg_popup_grab,
+    .reposition = _wl_swift_xdg_popup_reposition,
+};
+static inline void wl_swift_set_xdg_popup_implementation(
+    struct wl_resource *resource, struct wl_swift_xdg_popup_env *env)
+{
+    wl_resource_set_implementation(resource, &wl_swift_xdg_popup_implementation, env, _wl_swift_xdg_popup_env_destroy);
+}
+
+static inline void wl_swift_xdg_popup_send_configure(
+    struct wl_resource *resource, int32_t x, int32_t y, int32_t width, int32_t height)
+{
+    xdg_popup_send_configure(resource, x, y, width, height);
+}
+
+static inline void wl_swift_xdg_popup_send_popup_done(
+    struct wl_resource *resource)
+{
+    xdg_popup_send_popup_done(resource);
+}
+
+static inline void wl_swift_xdg_popup_send_repositioned(
+    struct wl_resource *resource, uint32_t token)
+{
+    xdg_popup_send_repositioned(resource, token);
+}
+
+// ------------------------------------------------------------------
+// Interface helper functions
+// ------------------------------------------------------------------
+
+static inline const struct wl_interface *wl_swift_xdg_wm_base_interface(void) { return &xdg_wm_base_interface; }
+static inline const struct wl_interface *wl_swift_xdg_positioner_interface(void) { return &xdg_positioner_interface; }
+static inline const struct wl_interface *wl_swift_xdg_surface_interface(void) { return &xdg_surface_interface; }
+static inline const struct wl_interface *wl_swift_xdg_toplevel_interface(void) { return &xdg_toplevel_interface; }
+static inline const struct wl_interface *wl_swift_xdg_popup_interface(void) { return &xdg_popup_interface; }
